@@ -59,8 +59,11 @@ class HomePage extends StatelessWidget {
                       // Student Button
                       ElevatedButton.icon(
                         icon: const Icon(Icons.school, size: 28),
-                        label: const Text("Student Interface",
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                        label: const Text(
+                          "Student login",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w600),
+                        ),
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size.fromHeight(56),
                           backgroundColor: Colors.white,
@@ -73,7 +76,8 @@ class HomePage extends StatelessWidget {
                         onPressed: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const StudentHome()),
+                            MaterialPageRoute(
+                                builder: (_) => const StudentHome()),
                           );
                         },
                       ),
@@ -82,8 +86,11 @@ class HomePage extends StatelessWidget {
                       // Admin Button
                       ElevatedButton.icon(
                         icon: const Icon(Icons.admin_panel_settings, size: 28),
-                        label: const Text("Staff / Admin Interface",
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                        label: const Text(
+                          "Staff / Admin login",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w600),
+                        ),
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size.fromHeight(56),
                           backgroundColor: Colors.redAccent,
@@ -96,7 +103,8 @@ class HomePage extends StatelessWidget {
                         onPressed: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const AdminDashboard()),
+                            MaterialPageRoute(
+                                builder: (_) => const AdminDashboard()),
                           );
                         },
                       ),
