@@ -1,159 +1,116 @@
 // lib/providers/multi_queue_provider.dart
-import 'dart:math';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
-class QueueEntry {
-  final String id;         // internal unique id
-  final String userName;   // name shown in UI
-  final String token;      // human token string e.g. CAN-001
-  int position;            // 1-based position in queue
-  String status;           // "waiting", "served", "skipped"
+enum ServiceStatus { open, busy, closed }
 
-  QueueEntry({
-    required this.id,
-    required this.userName,
+class TokenEntry {
+  final String regNo;
+  final String name;
+  final String area;
+  final String token;
+  final String? fcmToken;
+
+  TokenEntry({
+    required this.regNo,
+    required this.name,
+    required this.area,
     required this.token,
-    required this.position,
-    this.status = "waiting",
+    this.fcmToken,
   });
 }
 
 class MultiQueueProvider with ChangeNotifier {
-  final Map<String, List<QueueEntry>> _queues = {};
-  final Map<String, int> _nextToken = {};
+  final Map<String, List<TokenEntry>> _queues = {
+    "Canteen": [],
+    "Admission": [],
+    "Accounts Center": [],
+  };
 
-  // local (device) tracked token/service (optional)
-  String? myToken;
-  String? myServiceId;
-  int? myPosition;
+  final Map<String, ServiceStatus> serviceStatus = {
+    "Canteen": ServiceStatus.open,
+    "Admission": ServiceStatus.open,
+    "Accounts Center": ServiceStatus.open,
+  };
 
-  // --- Public API ---
+  // ✅ Token history for reports
+  final List<TokenEntry> _tokenHistory = [];
 
-  // get a copy of the queue (read-only list)
-  List<QueueEntry> getQueue(String serviceId) => List.unmodifiable(_queues[serviceId] ?? []);
+  Map<String, List<TokenEntry>> get queues => _queues;
+  List<TokenEntry> get tokenHistory => _tokenHistory;
 
-  // join a queue (student). Returns the created QueueEntry.
-  Future<QueueEntry> joinQueue(String serviceId, String userName) async {
-    _queues.putIfAbsent(serviceId, () => []);
-    _nextToken.putIfAbsent(serviceId, () => 1);
-
-    final tokenNumber = _nextToken[serviceId]!;
-    final tokenStr = '${serviceId.substring(0, min(3, serviceId.length)).toUpperCase()}-${tokenNumber.toString().padLeft(3, '0')}';
-    final id = '${serviceId}_${tokenNumber}_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(9999)}';
-    final position = _queues[serviceId]!.length + 1;
-
-    final entry = QueueEntry(
-      id: id,
-      userName: userName,
-      token: tokenStr,
-      position: position,
+  /// Generate token and add to queue
+  String addToken(String area, String regNo, String name, {String? fcmToken}) {
+    final tokenNumber = _queues[area]!.length + 1;
+    final token = "T$tokenNumber";
+    final entry = TokenEntry(
+      regNo: regNo,
+      name: name,
+      area: area,
+      token: token,
+      fcmToken: fcmToken,
     );
 
-    _queues[serviceId]!.add(entry);
-    _nextToken[serviceId] = tokenNumber + 1;
+    _queues[area]!.add(entry);
 
-    // save on device
-    myToken = tokenStr;
-    myServiceId = serviceId;
-    myPosition = position;
+    // ✅ Add to token history
+    _tokenHistory.add(entry);
 
     notifyListeners();
-    return entry;
+    return token;
   }
 
-  // student leaves/cancels
-  void leaveQueue(String serviceId, String token) {
-    final queue = _queues[serviceId];
-    if (queue == null) return;
-    queue.removeWhere((e) => e.token == token);
-
-    if (myServiceId == serviceId && myToken == token) {
-      myToken = null;
-      myServiceId = null;
-      myPosition = null;
-    }
-
-    _reassignPositions(serviceId);
+  /// Remove a token from a queue
+  void removeToken(String area, String token) {
+    _queues[area]!.removeWhere((t) => t.token == token);
     notifyListeners();
   }
 
-  // admin calls next (dequeue first waiting)
-  QueueEntry? serveNext(String serviceId) {
-    final queue = _queues[serviceId];
-    if (queue == null || queue.isEmpty) return null;
-
-    final next = queue.removeAt(0);
-    next.status = 'served';
-
-    _reassignPositions(serviceId);
-    _updateMyPositionAfterChange(serviceId);
-    notifyListeners();
-    return next;
-  }
-
-  // admin can skip a particular token
-  void skipStudent(String serviceId, String token) {
-    final queue = _queues[serviceId];
-    if (queue == null) return;
-    final idx = queue.indexWhere((e) => e.token == token);
-    if (idx >= 0) {
-      queue[idx].status = 'skipped';
-      notifyListeners();
-    }
-  }
-
-  // reset queue (admin)
-  void resetQueue(String serviceId) {
-    _queues[serviceId] = [];
-    _nextToken[serviceId] = 1;
-    if (myServiceId == serviceId) {
-      myServiceId = null;
-      myToken = null;
-      myPosition = null;
-    }
+  /// Update service status
+  void updateServiceStatus(String area, ServiceStatus status) {
+    serviceStatus[area] = status;
     notifyListeners();
   }
 
-  // fetch/refresh (for local-only implementation)
-  Future<void> fetchQueueStatus(String serviceId) async {
-    _reassignPositions(serviceId);
-    _updateMyPositionAfterChange(serviceId);
-    notifyListeners();
-  }
+  /// Call next student and send FCM notification
+  Future<void> callNextStudent(String area) async {
+    if (_queues[area]!.isEmpty) return;
 
-  // helper to get the position of the local token (if any)
-  int? getMyPosition(String serviceId) {
-    if (myServiceId == null || myToken == null) return null;
-    if (myServiceId != serviceId) return null;
-    return myPosition;
-  }
+    final nextStudent = _queues[area]!.first;
+    removeToken(area, nextStudent.token);
 
-  String? getMyToken(String serviceId) {
-    if (myServiceId == serviceId) return myToken;
-    return null;
-  }
-
-  // ---------------- helpers ----------------
-  void _reassignPositions(String serviceId) {
-    final queue = _queues[serviceId];
-    if (queue == null) return;
-    for (int i = 0; i < queue.length; i++) {
-      queue[i].position = i + 1;
+    if (nextStudent.fcmToken != null) {
+      await _sendNotification(
+        title: "It's your turn!",
+        body: "Token ${nextStudent.token} in $area queue",
+        fcmToken: nextStudent.fcmToken!,
+      );
     }
   }
 
-  void _updateMyPositionAfterChange(String serviceId) {
-    if (myServiceId != serviceId || myToken == null) {
-      myPosition = null;
-      return;
-    }
-    final queue = _queues[serviceId] ?? [];
-    final idx = queue.indexWhere((e) => e.token == myToken);
-    myPosition = idx >= 0 ? idx + 1 : null;
-    if (myPosition == null) {
-      // local user might have been served or removed
-      myToken = null;
-      myServiceId = null;
-    }
+  /// Send FCM notification
+  Future<void> _sendNotification({
+    required String title,
+    required String body,
+    required String fcmToken,
+  }) async {
+    const serverKey = 'YOUR_FIREBASE_SERVER_KEY'; // Replace with your FCM server key
+
+    await http.post(
+      Uri.parse('https://fcm.googleapis.com/fcm/send'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'key=$serverKey',
+      },
+      body: jsonEncode({
+        'to': fcmToken,
+        'notification': {'title': title, 'body': body},
+        'priority': 'high',
+      }),
+    );
   }
+
+  /// Get total tokens issued today
+  int totalTokensIssued() => _tokenHistory.length;
 }
