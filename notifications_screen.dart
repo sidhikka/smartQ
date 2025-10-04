@@ -10,58 +10,33 @@ class NotificationsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = Provider.of<MultiQueueProvider>(context);
 
-    // If the user has a token, show one helpful notification
-    final myService = provider.myServiceId;
-    final myToken = myService == null ? null : provider.getMyToken(myService);
-    final myPos = myService == null ? null : provider.getMyPosition(myService);
-
-    final List<String> messages = [
-      if (myToken != null) 'Your token: $myToken (Position: ${myPos ?? "-"})',
-      if (myPos != null && myPos > 1) 'Heads up — your turn is approaching.',
-      if (myPos == 1) 'You are next — please proceed to the counter.',
-      'Tip: Refresh Live Status to get the latest updates.',
-    ];
+    // Collect last 5 tokens across all queues
+    final allTokens = provider.queues.values.expand((q) => q).toList().reversed.take(5).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(colors: [Color(0xFF6A11CB), Color(0xFF2575FC)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Card(
-                  color: Colors.white.withOpacity(0.12),
+      appBar: AppBar(title: const Text("Notifications")),
+      body: allTokens.isEmpty
+          ? const Center(child: Text("No notifications yet."))
+          : ListView.builder(
+              itemCount: allTokens.length,
+              padding: const EdgeInsets.all(16),
+              itemBuilder: (context, index) {
+                final token = allTokens[index];
+                return Card(
+                  color: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: messages.length,
-                    separatorBuilder: (_, __) => const Divider(color: Colors.white30),
-                    itemBuilder: (context, i) {
-                      return ListTile(
-                        leading: const Icon(Icons.notifications, color: Colors.white),
-                        title: Text(messages[i], style: const TextStyle(color: Colors.white)),
-                      );
-                    },
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  child: ListTile(
+                    leading: const Icon(Icons.notifications, color: Colors.blue),
+                    title: Text("New Token in ${token.area}"),
+                    subtitle: Text("Token: ${token.token} - ${token.name}"),
                   ),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Simulated push permission granted (placeholder)')));
-                  },
-                  child: const Text('Enable Notifications (Simulated)'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.blue),
-                ),
-              ],
+                );
+              },
             ),
-          ),
-        ),
-      ),
     );
   }
 }
+
+     
+
